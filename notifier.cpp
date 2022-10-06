@@ -15,13 +15,14 @@ void notifier::destroy()
 {
     for(size_t index=0; index<m_watched_list.size(); ++index)
     {
-        m_watched_list[index].m_watched_status = false;
         inotify_rm_watch(m_watched_list[index].m_file_descriptor, m_watched_list[index].m_watch_descriptor);
         close(m_watched_list[index].m_file_descriptor);
         std::cout << "Inotify Remove Watch for path: " << m_watched_list[index].m_path << "\n";
         m_watcher_list[index].join();
     }
     m_condition_var.notify_all();
+    std::cout << "All files/directories were removed\n";
+    delete _instance;
 }
 
 bool notifier::add_watch_list(std::vector<std::string_view> _paths)
@@ -56,7 +57,7 @@ bool notifier::add_watch_list(std::vector<std::string_view> _paths)
     return file_count == _paths.size() ? false : true;
 }
 
-int notifier::watch()
+void notifier::watch()
 {
     for(auto& _info : m_watched_list)
     {
@@ -65,7 +66,11 @@ int notifier::watch()
         });
         m_watcher_list.emplace_back(std::move(_watcher));
     }
+    _wait_main_thread();
+}
 
+void notifier::_wait_main_thread()
+{
     std::unique_lock<std::mutex> _lock(m_mutex);
     m_condition_var.wait(_lock, [](){
         return !std::accumulate(m_watched_list.begin(), m_watched_list.end(),
@@ -73,16 +78,22 @@ int notifier::watch()
                     return (accumulate || _info.m_watched_status);
                 });
     });
-    return 0;
 }
 
-int notifier::_watch(watch_info_t& _info)
+void notifier::_watch(watch_info_t& _info)
 {
     std::cout << "Observing started for " << _info.m_path << '\n';
     struct inotify_event* _event_list = new struct inotify_event[MAX_EVENTS];
 
     while(_info.m_watched_status)
     {
+
+        if(m_shutting_down)
+        {
+            _info.m_watched_status = false;
+            m_condition_var.notify_all();
+        }
+
         int length = read(_info.m_file_descriptor, _event_list, EVENT_SIZE*MAX_EVENTS);
         for(int i = 0;i<length;) 
         {
@@ -111,8 +122,7 @@ int notifier::_watch(watch_info_t& _info)
                 }
                 else if (event->mask & IN_DELETE_SELF)
                 {
-                    std::cout<<"Observed file/directory was deleted.\n"
-                    "Therefore application will be closed\n";
+                    std::cout<<"One of the observed files/directories was deleted.\n";
                     _info.m_watched_status = false;
                     m_condition_var.notify_all();
                 }
@@ -123,26 +133,21 @@ int notifier::_watch(watch_info_t& _info)
                     m_condition_var.notify_all();
                 }
             }
-            i += EVENT_SIZE + event->len;
+            i += EVENT_SIZE + event->len + _info.m_path.size();
         }
     }
     delete [] _event_list;
-    return 0;
 }
 
 notifier::notifier()
 {
-    //std::signal(SIGINT, notifier::_handle_signal);
+    std::signal(SIGINT, notifier::_handle_signal);
 }
 
-notifier::~notifier()
-{
-    delete _instance;
-}
+notifier::~notifier(){}
 
 void notifier::_handle_signal(int _signal)
 {
     std::cout << "SIGINT signal captured to be handled\n";
-    notifier::destroy();
-    exit(0);
+    m_shutting_down = true;
 }

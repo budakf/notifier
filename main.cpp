@@ -25,7 +25,7 @@ int main(int argc, char** argv)
     }
     else
     {
-        std::cout << "Usage:\n\tnotifier $FILE_PATH_1 $FILE_PATH_2 ...\n";
+        std::cout << "Usage:\n\t./notifier $FILE_PATH_1 $FILE_PATH_2 ...\n";
     }
     return 0;    
 }

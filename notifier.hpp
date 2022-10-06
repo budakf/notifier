@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <atomic>
 #include <string_view>
 #include <condition_variable>
 
@@ -30,18 +31,20 @@ public:
     static notifier* instance();
     static void destroy();
     bool add_watch_list(std::vector<std::string_view> _paths);
-    int watch();
+    void watch();
 
 private:
     notifier();
     ~notifier();
-    static int _watch(watch_info_t& _info);
+    static void _wait_main_thread();
+    static void _watch(watch_info_t& _info);
     static void _handle_signal(int _signal);
 
     static inline notifier* _instance{nullptr};
     static inline std::vector<watch_info_t> m_watched_list{};
     static inline std::vector<std::thread> m_watcher_list{};
 
+    static inline std::atomic<bool> m_shutting_down{false};
     static inline std::condition_variable m_condition_var{};
     static inline std::mutex m_mutex{};
 };
