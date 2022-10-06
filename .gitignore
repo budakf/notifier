@@ -2,3 +2,5 @@
 *.i
 *.o
 notifier
+./bin/**
+./build/**
